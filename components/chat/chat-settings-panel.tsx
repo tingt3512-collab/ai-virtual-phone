@@ -51,6 +51,7 @@ import { ConfirmDialog } from "@/components/ui/modal";
 import { CHAT_SESSION_CSS_EXAMPLE } from "@/lib/css-examples";
 import { Toggle, Input } from "@/components/ui/form";
 import { PageShell } from "@/components/ui/page-shell";
+import { ChatRelationshipPanel } from "./chat-relationship-panel";
 
 // 自定义状态栏预填模板：微博主页（契约=「状态栏」章节整段正文，含【逻辑】【格式】与包裹要求）
 // 预览用的默认示例数据：契约没有自带示例时兜底，字段与下面的微博模板对应
@@ -854,6 +855,8 @@ export function ChatSettingsPanel({
                         </button>
                     )}
                 </div>
+
+                {!session.isGroup && <ChatRelationshipPanel key={session.id} session={session} />}
 
                 {/* Group member management */}
                 {session.isGroup && (
