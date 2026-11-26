@@ -30,6 +30,7 @@ export const PERMISSION_LABELS: Record<string, string> = {
   "chat.contacts.write": "修改聊天联系人状态",
   "chat.tools": "在生成中使用聊天工具",
   "characters.read": "读取角色基础信息",
+  "characters.write": "创建与写入角色到角色列表",
   "characters.state.read": "读取角色状态",
   "characters.state.write": "修改角色状态",
   "characters.relations.read": "读取角色关系",

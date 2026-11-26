@@ -29,6 +29,7 @@ export type CustomAppPermission =
   | "chat.contacts.write"
   | "chat.tools"
   | "characters.read"
+  | "characters.write"
   | "characters.state.read"
   | "characters.state.write"
   | "characters.relations.read"

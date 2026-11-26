@@ -34,6 +34,7 @@ import {
   activateCustomAppWorld,
   cancelCustomAppTask,
   cloneCustomAppVoice,
+  createCustomAppCharacters,
   createCustomAppNotification,
   deleteCustomAppTimelineEvent,
   fetchCustomAppNetwork,
@@ -457,6 +458,7 @@ html, body { min-height: 100%; }
     characters: {
       list: function(){ return request('characters.list'); },
       get: function(id){ return request('characters.get', { id: id }); },
+      create: function(payload){ return request('characters.create', payload || {}); },
       readState: function(payload){ return request('characters.state.read', payload || {}); },
       writeState: function(payload){ return request('characters.state.write', payload || {}); },
       readRelations: function(payload){ return request('characters.relations.read', payload || {}); }
@@ -652,6 +654,7 @@ function bridgeActionNeedsSettingsStorage(action: string): boolean {
 
 function bridgeActionNeedsKvStorage(action: string): boolean {
   return action.startsWith("db.")
+    || action.startsWith("characters.")
     || action.startsWith("bridge.")
     || action.startsWith("notifications.")
     || action.startsWith("tasks.")
@@ -1086,7 +1089,7 @@ export function CustomAppRunner({
           calendar: ["read", "list", "write", "create", "update", "delete", "replaceWeek"],
           world: ["read", "list", "get", "write", "create", "update", "delete", "activate"],
           media: ["pick", "save", "put", "get", "revoke", "delete"],
-          characters: ["list", "get", "readState", "writeState", "readRelations"],
+          characters: ["list", "get", "create", "readState", "writeState", "readRelations"],
           chat: ["getCurrentSession", "readHistory", "sendMessage", "sendCard", "updateCard", "writeHistory", "requestReply", "openConversation", "setContactState"],
           memory: ["readCore", "readLongTerm", "readShortTerm", "search", "add", "addTimeline", "deleteTimeline", "removeTimeline", "suggest"],
           notifications: ["create", "list", "markRead", "markAllRead", "getBadge", "setBadge", "incrementBadge", "clearBadge"],
@@ -1625,6 +1628,10 @@ export function CustomAppRunner({
     if (action === "characters.get") {
       requirePermission("characters.read");
       return loadCharacters().find(character => character.id === String(record.id ?? "")) ?? null;
+    }
+    if (action === "characters.create") {
+      requirePermission("characters.write");
+      return createCustomAppCharacters(record);
     }
     if (action === "characters.state.read") {
       requirePermission("characters.state.read");
