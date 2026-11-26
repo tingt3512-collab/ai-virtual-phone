@@ -1345,6 +1345,7 @@ const CUSTOM_APP_CREATOR_GUIDE_LINES = [
   "* `app.manifest.read`：读取 manifest 和 SDK 能力摘要。",
   "* `characters.read`：读取角色基础信息。",
   "* `characters.write`：创建新角色并写入角色列表。",
+  "* `characters.write`：创建新角色并写入角色列表。",
   "* `ai.generate`：让指定角色基于 APP 任务生成内容，但不自动发送到聊天室。",
   "* `chat.read`：读取授权范围内的聊天会话和历史。",
   "* `chat.read.background`：APP 未打开时后台监听聊天消息；后台 handler 需要读聊天历史时也可用它。",
