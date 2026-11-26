@@ -47,6 +47,15 @@ export type ChatSession = {
     videoBackground?: string;
     voiceBackground?: string;
     isBlacklisted?: boolean;
+    blockedAt?: string;
+    blockReason?: string;
+    shareBlockReason?: boolean;
+    blockedInbox?: { id: string; content: string; createdAt: string }[];
+    blockReactionKey?: string;
+    characterRemark?: string;
+    characterRemarkRules?: string;
+    characterRemarkUpdatedAt?: string;
+    characterRemarkHistory?: { remark: string; createdAt: string }[];
     customCSS?: string;
     isMuted?: boolean;
     bilingualTranslationEnabled?: boolean;
@@ -100,6 +109,8 @@ export type ChatMessage = {
     toolExecutionId?: string; // Links visible tool attachments to their persisted tool result
     editableResponseText?: string; // Processed text shown in the reply editor
     isRetracted?: boolean;
+    /** 拦截的在途回复不进入正常聊天列表。 */
+    isBlockedReaction?: boolean;
     mediaType?: "image" | "audio" | "video"
         | "red_packet" | "transfer" | "location"
         | "poke" | "sticker" | "quote" | "dice"
@@ -1058,6 +1069,23 @@ export function saveChatSessions(sessions: ChatSession[]) {
     else dbPutSessions(refreshed.items);
 }
 
+export const CHAT_RELATIONSHIP_UPDATED_EVENT = "chat-relationship-updated";
+
+export function updateChatRelationship(sessionId: string, patch: Partial<Pick<ChatSession,
+    "isBlacklisted" | "blockedAt" | "blockReason" | "shareBlockReason" | "blockedInbox" |
+    "blockReactionKey" | "characterRemark" | "characterRemarkRules" | "characterRemarkUpdatedAt" | "characterRemarkHistory"
+>>): ChatSession {
+    const sessions = loadChatSessions();
+    const session = sessions.find(item => item.id === sessionId);
+    if (!session || session.isGroup) throw new Error("该功能仅支持单人聊天");
+    Object.assign(session, patch);
+    saveChatSessions(sessions);
+    if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent(CHAT_RELATIONSHIP_UPDATED_EVENT, { detail: { sessionId } }));
+    }
+    return session;
+}
+
 export function createOrGetSession(contactId: string): ChatSession {
     const sessions = loadChatSessions();
     const existing = sessions.find(s => s.contactId === contactId);
@@ -1148,6 +1176,22 @@ export function createToolExecutionId(): string {
     return `toolrun_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function archiveBlockedAssistantMessage(message: ChatMessage): boolean {
+    const session = _sessionsCache.find(item => item.id === message.sessionId && !item.isGroup);
+    if (!session || message.role !== "assistant") return false;
+    const alreadyArchived = session.blockedInbox?.some(item => item.id === message.id);
+    if (!session.isBlacklisted && !alreadyArchived) return false;
+    message.isBlockedReaction = true;
+    if (!alreadyArchived && message.content.trim() && message.mediaType !== "tool_call") {
+        updateChatRelationship(session.id, {
+            blockedInbox: [...(session.blockedInbox || []), {
+                id: message.id, content: message.content, createdAt: message.createdAt,
+            }],
+        });
+    }
+    return true;
+}
+
 export function pushChatMessage(msg: Omit<ChatMessage, "id" | "createdAt" | "status"> & {
     status?: ChatMessageStatus;
     createdAt?: string;
@@ -1165,6 +1209,9 @@ export function pushChatMessage(msg: Omit<ChatMessage, "id" | "createdAt" | "sta
     if (pluginResult.message && typeof pluginResult.message === "object" && pluginResult.message.id === newMsg.id) {
         newMsg = pluginResult.message;
     }
+
+    // 包括拉黑前已发出的在途请求；不触发普通消息事件、预览或通知。
+    if (archiveBlockedAssistantMessage(newMsg)) return newMsg;
 
     _messagesCache.push(newMsg);
     dbPutMessage(newMsg);
@@ -1210,6 +1257,8 @@ export function upsertImportedChatMessage(msg: ChatMessage): { message: ChatMess
         createdAt: msg.createdAt || new Date().toISOString(),
         order: typeof msg.order === "number" ? msg.order : getNextMessageOrder(msg.sessionId),
     };
+
+    if (archiveBlockedAssistantMessage(newMsg)) return { message: newMsg, inserted: false };
 
     _messagesCache.push(newMsg);
     dbPutMessage(newMsg);

@@ -1,6 +1,7 @@
 // lib/chat-engine.ts
 
 import { createSseJsonParser } from "./sse-json";
+import { buildChatRelationshipContext } from "./chat-relationship-context";
 import { maybeAppendShortcutCapability } from "./offline-shortcut-capability";
 import { loadCharacters } from "./character-storage";
 import { buildScreenEffectPromptHint } from "./chat-screen-effects";
@@ -1982,6 +1983,9 @@ export async function buildChatPromptMessages(
         offlineSummaryTag: preset?.story_summary_tag?.trim() || "summary",
         nativeToolHistory: usesNativeActions,
     });
+    const relationship = loadChatSessions().find(item => item.id === session.id) ?? session;
+    const relationshipContext = buildChatRelationshipContext(relationship);
+    if (relationshipContext) llmMessages.push({ role: "system", content: relationshipContext });
     if (promptProfile?.output === "plain_text") {
         llmMessages.push({
             role: "system",
@@ -2528,6 +2532,10 @@ export async function generateChatCompletion(
     options?: ChatPromptBuildOptions & { signal?: AbortSignal },
     callbacks?: ChatCompletionCallbacks,
 ): Promise<ChatCompletionResult> {
+    const currentSession = loadChatSessions().find(item => item.id === session.id) ?? session;
+    if (!currentSession.isGroup && currentSession.isBlacklisted) {
+        throw new ChatEngineError("该联系人已被拉黑，请在聊天信息中点击“接收他的反应”。");
+    }
     // 发送兜底（离线推送）：生成期间在服务端挂一张带心跳租约的保险单，
     // 本地完成即撤销；App 被杀则心跳停跳，服务端接管生成并推送。
     const bailoutRef: ReplyBailoutRef = {

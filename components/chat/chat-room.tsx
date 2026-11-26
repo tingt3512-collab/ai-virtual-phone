@@ -15,6 +15,8 @@ import { EmojiPanel, StickerPanel } from "./emoji-panel";
 import { StickerSearchSuggest } from "./sticker-search-suggest";
 import { StateValuesPanel } from "./state-values-panel";
 import { generateChatCompletion, generateOfflineChatCompletion, flattenCompletionResult, ChatEngineError } from "@/lib/chat-engine";
+import { useChatRelationship } from "./chat-relationship-panel";
+import { CHAT_RELATIONSHIP_UPDATED_EVENT } from "@/lib/chat-storage";
 import { formatOfflineTurnXml as formatOfflineTurnXmlShared, buildOfflinePromptHistory as buildOfflinePromptHistoryShared } from "@/lib/offline-prompt-builder";
 import { getStatusRegionConfig, isCustomStatusRegionActive } from "@/lib/chat-status-region";
 import { CustomStatusFrame } from "@/components/chat/custom-status-frame";
@@ -1078,6 +1080,7 @@ const OfflineTextInputBar = memo(forwardRef<OfflineTextInputHandle, {
 }));
 
 export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
+    const relationshipSession = useChatRelationship(session);
     const [liveCSS, setLiveCSS] = useState(session.customCSS || "");
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [transientMessages, setTransientMessages] = useState<ChatMessage[]>([]);
@@ -1342,7 +1345,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     useChatBottomReserve(
         wrapperRef,
         scrollRef,
-        `${session.id}:${offlineMode}:${isMultiSelectMode}:${showEmojiPanel}:${showStickerPanel}:${showPlusMenu}:${theaterMode}:${!!quotingMessage}`,
+        `${session.id}:${offlineMode}:${isMultiSelectMode}:${showEmojiPanel}:${showStickerPanel}:${showPlusMenu}:${theaterMode}:${!!quotingMessage}:${!!relationshipSession.isBlacklisted}`,
     );
 
     const selectStoredMessageWindow = useCallback((allMsgs: ChatMessage[]) => {
@@ -1953,6 +1956,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     // Prevents flash of wrong scroll position, works reliably under transform: scale()
     const displayMessages = useMemo(() => {
         return [...messages, ...transientMessages]
+            .filter(msg => !msg.isBlockedReaction)
             .map((msg, index) => ({ msg, index }))
             .sort((a, b) => {
                 const orderDiff = compareChatMessages(a.msg, b.msg);
@@ -2696,6 +2700,21 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         syncMessagesFromStorage();
         showChatToast("已停止本轮生成");
     };
+
+    useEffect(() => {
+        const onRelationshipChange = () => {
+            const current = loadChatSessions().find(item => item.id === session.id);
+            if (!current?.isBlacklisted || current.isGroup) return;
+            if (isGeneratingRef.current) clearStuckGeneration();
+            setStreamPreview(null);
+            setTransientMessages([]);
+            setShowEmojiPanel(false);
+            setShowStickerPanel(false);
+            setShowPlusMenu(false);
+        };
+        window.addEventListener(CHAT_RELATIONSHIP_UPDATED_EVENT, onRelationshipChange);
+        return () => window.removeEventListener(CHAT_RELATIONSHIP_UPDATED_EVENT, onRelationshipChange);
+    }, [session.id]);
 
     const clearOfflineGeneration = () => {
         const cancelled = cancelOfflineGenerationRun(session.id);
@@ -3551,6 +3570,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     };
 
     const triggerAIResponse = async () => {
+        if (!session.isGroup && loadChatSessions().find(item => item.id === session.id)?.isBlacklisted) {
+            setShowSettings(true);
+            return;
+        }
         if (isGeneratingRef.current) {
             if (activeGenerationRuns.has(session.id)) return;
             // 上一轮被外部取消/顶替后收尾提前返回过，标记已是陈旧状态：复位后继续本次请求
@@ -3924,6 +3947,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
 
     // 围观群/被禁言时用户不能发言
     const ensureGroupSpeakPermission = (): boolean => {
+        if (!session.isGroup && loadChatSessions().find(item => item.id === session.id)?.isBlacklisted) {
+            showChatToast("请先解除拉黑，再发送消息");
+            return false;
+        }
         if (!session.isGroup) return true;
         if (session.isSpectator) {
             showChatToast("围观群不能发言，只能点生成");
@@ -5462,6 +5489,11 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                     if (showPlusMenu) setShowPlusMenu(false);
                 }}
             >
+                {!session.isGroup && relationshipSession.isBlacklisted && !offlineMode && (
+                    <button type="button" className="rounded-xl border border-[var(--c-border)] bg-[var(--c-page-body-bg)] p-3 text-sm text-[var(--c-text)]" onClick={() => setShowSettings(true)}>
+                        已拉黑 · 点击接收他的反应或解除拉黑
+                    </button>
+                )}
                 {offlineMode && (
                     <div className="chat-offline-body">
                         {offlineTurns.length === 0 && !pendingOfflineUserText ? (
@@ -6223,7 +6255,13 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                     onStopGeneration={clearOfflineGeneration}
                 />
             ) : (
-            <ChatTextInputBar
+            relationshipSession.isBlacklisted && !session.isGroup ? (
+                <div data-ui="input" className="chat-input-bar chat-room-main-pane flex flex-wrap items-center justify-center gap-3 border-t border-[var(--c-border)] text-sm text-[var(--c-text)]">
+                    <span>此联系人已被拉黑</span>
+                    <button type="button" className="underline" onClick={() => setShowSettings(true)}>接收反应 / 解除拉黑</button>
+                    <button type="button" className="underline" onClick={toggleOfflineMode}>线下模式</button>
+                </div>
+            ) : <ChatTextInputBar
                 ref={chatTextInputRef}
                 characterName={character?.name || "对方"}
                 characterId={session.contactId}

@@ -270,6 +270,7 @@ function delay(ms: number): Promise<void> {
 async function dispatchBackgroundMessagesOneByOne(sessionId: string, messages: ChatMessage[], immediate = false) {
     for (let index = 0; index < messages.length; index += 1) {
         if (index > 0 && !immediate) await delay(BACKGROUND_MESSAGE_STAGGER_MS);
+        if (messages[index].isBlockedReaction || loadChatSessions().find(item => item.id === sessionId)?.isBlacklisted) continue;
         window.dispatchEvent(new CustomEvent("followup-message-saved", {
             detail: { sessionId, message: messages[index] },
         }));
@@ -1098,7 +1099,7 @@ export async function parseAndSaveResponse(
     // 与聊天室前台切后台时同节奏的双通道提醒：横幅 + 系统弹窗成对、
     // 按 800ms 逐条发（与气泡逐条弹出同拍；Worker 定时器保证后台锁屏也按节奏到达）
     // 静默模式（回端合并）不再重复提醒——系统推送已经弹过了
-    if (filteredParts.length > 0 && options?.silent !== true) {
+    if (filteredParts.length > 0 && options?.silent !== true && !savedMessages.some(message => message.isBlockedReaction)) {
         const isGroup = sess?.isGroup === true;
         const avatar = isGroup
             ? (options?.senderCharacterId
@@ -1111,6 +1112,7 @@ export async function parseAndSaveResponse(
         const { sendBrowserNotification } = await import("./browser-notification");
         filteredParts.forEach((part, index) => {
             bgSetTimeout(() => {
+                if (loadChatSessions().find(item => item.id === sessionId)?.isBlacklisted) return;
                 dispatchChatMessageNotice({
                     sessionId,
                     senderName: charName,
@@ -1124,7 +1126,7 @@ export async function parseAndSaveResponse(
     }
 
     // Emit call trigger event for chat-room to pick up
-    if (triggerCall && typeof window !== "undefined") {
+    if (triggerCall && typeof window !== "undefined" && !loadChatSessions().find(item => item.id === sessionId)?.isBlacklisted) {
         window.dispatchEvent(new CustomEvent("ai-call-trigger", { detail: { sessionId, type: triggerCall } }));
     }
 
